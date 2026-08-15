@@ -16,11 +16,16 @@ export default function Audience({ params }: { params: Promise<{ id: string }> }
   useEffect(() => {
     if (!id) return;
     let active = true;
+    let timer = 0;
     const load = async () => {
       const response = await fetch(`/api/live/${id}`, { cache: "no-store" });
-      if (response.ok && active) { const data = await response.json() as { gameTitle: string; state: LiveState }; setTitle(data.gameTitle); setState(data.state); }
+      if (response.ok && active) {
+        const data = await response.json() as { gameTitle: string; state: LiveState };
+        setTitle(data.gameTitle); setState(data.state);
+        if (data.state.closed || data.state.hostOnline === false) window.clearInterval(timer);
+      }
     };
-    load(); const timer = window.setInterval(load, 2000);
+    void load(); timer = window.setInterval(load, 2000);
     return () => { active = false; window.clearInterval(timer); };
   }, [id]);
 
