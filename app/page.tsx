@@ -18,7 +18,7 @@ F | EMPIEZA | Faro | Torre con una luz que guía a los barcos
 G | EMPIEZA | Guitarra | Instrumento musical de seis cuerdas
 H | CONTIENE | Hielo | Agua en estado sólido`;
 
-const AI_PROMPT = `Crea una lista de palabras para jugar Pasapalabras, una por cada letra del alfabeto español. Cada línea debe contener exactamente: LETRA | TIPO | RESPUESTA | DESCRIPCIÓN. En TIPO escribe EMPIEZA cuando la respuesta comience por esa letra o CONTIENE cuando la respuesta contenga esa letra en cualquier posición. Prioriza EMPIEZA; usa CONTIENE solamente cuando sea difícil encontrar una opción natural. Comprueba que cada respuesta cumpla realmente el tipo indicado. La descripción debe ser clara, breve y no mencionar ni revelar la respuesta. Ordena las líneas alfabéticamente y no agregues títulos, números, viñetas ni explicaciones. Ejemplos: A | EMPIEZA | Agua | Vital líquido para los humanos. Ñ | CONTIENE | Niño | Persona que está en la etapa de la infancia.`;
+const AI_PROMPT = `CATEGORÍA: [ESCRIBE AQUÍ LA CATEGORÍA]\n\nCrea una lista de palabras de la categoría indicada para jugar Pasapalabras, una por cada letra del alfabeto español. Cada línea debe contener exactamente: LETRA | TIPO | RESPUESTA | DESCRIPCIÓN. En TIPO escribe EMPIEZA cuando la respuesta comience por esa letra o CONTIENE cuando la respuesta contenga esa letra en cualquier posición. Prioriza EMPIEZA; usa CONTIENE solamente cuando sea difícil encontrar una opción natural. Comprueba que cada respuesta cumpla realmente el tipo indicado. No repitas ninguna respuesta en toda la lista, aunque una misma palabra pudiera servir para dos letras diferentes o para los tipos EMPIEZA y CONTIENE. Considera iguales las palabras que solo cambien en mayúsculas, minúsculas o tildes. Por ejemplo, no uses MÉXICO para M y nuevamente para X, ni KIWI para K y nuevamente para W. La descripción debe ser clara, breve y no mencionar ni revelar la respuesta. Ordena las líneas alfabéticamente y no agregues títulos, números, viñetas ni explicaciones. Ejemplos: A | EMPIEZA | Agua | Vital líquido para los humanos. Ñ | CONTIENE | Niño | Persona que está en la etapa de la infancia.`;
 
 function parse(text: string): Word[] {
   return text.split("\n").map((line) => line.trim()).filter(Boolean).map((line, index) => {
@@ -84,6 +84,18 @@ export default function Home() {
     fetch(`/api/live/${liveId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ state }) });
   }, [liveId, words, current, remaining, running, view, teamIndex]);
 
+  useEffect(() => {
+    if (!liveId || !active) return;
+    const heartbeat = () => {
+      const state = publicState(words, current, active, remaining, running, correct);
+      void fetch(`/api/live/${liveId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ state }) });
+    };
+    const closeSession = () => { navigator.sendBeacon(`/api/live/${liveId}/close`); };
+    const timer = window.setInterval(heartbeat, 5000);
+    window.addEventListener("beforeunload", closeSession);
+    return () => { window.clearInterval(timer); window.removeEventListener("beforeunload", closeSession); };
+  }, [liveId, active, words, current, remaining, running, correct, teamIndex]);
+
   function publicState(list: Word[], index: number, word: Word, time: number, isRunning: boolean, points: number) {
     return { words: list.map(({ letter, mark }) => ({ letter, mark })), current: index, clue: word.clue, relation: `${word.relation === "EMPIEZA" ? "Empieza por" : "Contiene la"} ${word.letter}`, remaining: time, team: mode === "teams" ? teamNames[teamIndex] : "Ronda individual", correct: points, running: isRunning };
   }
@@ -96,10 +108,11 @@ export default function Home() {
   function freshWords() { return ready.map((word) => ({ ...word, mark: "pending" as Mark })); }
 
   async function start() {
+    if (liveId) await fetch(`/api/live/${liveId}/close`, { method: "POST", keepalive: true });
     const list = freshWords();
     setWords(list); setCurrent(0); setTeamIndex(0); setResults([]);
-    setRemaining(duration); setRunning(true); setView("game"); setLiveId("");
-    const response = await fetch("/api/live", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ gameTitle, state: publicState(list, 0, list[0], duration, true, 0) }) });
+    setRemaining(duration); setRunning(false); setView("game"); setLiveId("");
+    const response = await fetch("/api/live", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ gameTitle, state: publicState(list, 0, list[0], duration, false, 0) }) });
     if (response.ok) setLiveId(((await response.json()) as { id: string }).id);
   }
 
@@ -150,7 +163,14 @@ export default function Home() {
 
   function startSecondTeam() {
     setTeamIndex(1); setWords(freshWords()); setCurrent(0); setRemaining(duration);
-    setRunning(true); setView("game");
+    setRunning(false); setView("game");
+  }
+
+  async function exitGame() {
+    setRunning(false);
+    if (liveId) await fetch(`/api/live/${liveId}/close`, { method: "POST", keepalive: true });
+    setLiveId("");
+    setView("setup");
   }
 
   function updateDuration(minutes: number, seconds: number) {
@@ -245,7 +265,7 @@ export default function Home() {
 
   return (
     <main className="game-page">
-      <header className="mobile-header"><div><span>{mode === "teams" ? teamNames[teamIndex] : "Ronda individual"}</span><strong>{correct} aciertos</strong></div><div className="header-actions">{liveId && <button className="share-live" onClick={copyShareLink}>{shareCopied ? "✓ Copiado" : "Compartir en vivo"}</button>}<button onClick={() => { setRunning(false); setView("setup"); }}>Salir</button></div></header>
+      <header className="mobile-header"><div><span>{mode === "teams" ? teamNames[teamIndex] : "Ronda individual"}</span><strong>{correct} aciertos</strong></div><div className="header-actions">{liveId && <button className="share-live" onClick={copyShareLink}>{shareCopied ? "✓ Copiado" : "Compartir en vivo"}</button>}<button onClick={exitGame}>Salir</button></div></header>
       <section className="rosco-area">
         <div className="rosco" aria-label="Rosco de letras">
           {words.map((word, index) => {
