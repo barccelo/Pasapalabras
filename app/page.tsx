@@ -18,7 +18,7 @@ F | EMPIEZA | Faro | Torre con una luz que guía a los barcos
 G | EMPIEZA | Guitarra | Instrumento musical de seis cuerdas
 H | CONTIENE | Hielo | Agua en estado sólido`;
 
-const AI_PROMPT = `CATEGORÍA: [ESCRIBE AQUÍ LA CATEGORÍA]\n\nCrea una lista de palabras de la categoría indicada para jugar Pasapalabras. Debe haber exactamente una línea y una respuesta distinta para cada letra del alfabeto español: nunca asignes dos respuestas a la misma letra y nunca reutilices una respuesta para otra letra. Cada línea debe contener exactamente: LETRA | TIPO | RESPUESTA | DESCRIPCIÓN. En TIPO escribe EMPIEZA cuando la respuesta comience por esa letra o CONTIENE cuando la respuesta contenga esa letra en cualquier posición. Prioriza EMPIEZA; usa CONTIENE solamente cuando sea difícil encontrar una opción natural. Comprueba que cada respuesta cumpla realmente el tipo indicado. No repitas ninguna respuesta en toda la lista, aunque una misma palabra pudiera servir para dos letras diferentes o para los tipos EMPIEZA y CONTIENE. Considera iguales las palabras que solo cambien en mayúsculas, minúsculas o tildes. Por ejemplo, no uses MÉXICO para M y nuevamente para X, ni KIWI para K y nuevamente para W. La descripción debe ser clara, breve y no mencionar ni revelar la respuesta. Ordena las líneas alfabéticamente y no agregues títulos, números, viñetas ni explicaciones. Ejemplos: A | EMPIEZA | Agua | Vital líquido para los humanos. Ñ | CONTIENE | Niño | Persona que está en la etapa de la infancia.`;
+const AI_PROMPT = `CATEGORÍA: [ESCRIBE AQUÍ LA CATEGORÍA]\n\nCrea una lista de palabras de la categoría indicada para jugar Pasapalabras. Debe haber exactamente una línea y una respuesta distinta para cada letra del alfabeto español: nunca asignes dos respuestas a la misma letra y nunca reutilices una respuesta para otra letra. Cada línea debe contener exactamente: LETRA | TIPO | RESPUESTA | DESCRIPCIÓN. En TIPO escribe EMPIEZA cuando la respuesta comience por esa letra o CONTIENE cuando la respuesta contenga esa letra en cualquier posición. Prioriza EMPIEZA; usa CONTIENE solamente cuando sea difícil encontrar una opción natural. Comprueba que cada respuesta cumpla realmente el tipo indicado. No repitas ninguna respuesta en toda la lista, aunque una misma palabra pudiera servir para dos letras diferentes o para los tipos EMPIEZA y CONTIENE. Considera iguales las palabras que solo cambien en mayúsculas, minúsculas o tildes. Por ejemplo, no uses MÉXICO para M y nuevamente para X, ni KIWI para K y nuevamente para W. Los casos de MÉXICO y KIWI son únicamente ejemplos; esta regla se aplica a cualquier respuesta de la lista. La descripción debe ser clara, breve y no mencionar ni revelar la respuesta. Ordena las líneas alfabéticamente y no agregues títulos, números, viñetas ni explicaciones. Ejemplos: A | EMPIEZA | Agua | Vital líquido para los humanos. Ñ | CONTIENE | Niño | Persona que está en la etapa de la infancia.`;
 
 function parse(text: string): Word[] {
   return text.split("\n").map((line) => line.trim()).filter(Boolean).map((line, index) => {
@@ -57,6 +57,7 @@ export default function Home() {
   const [gameTitle, setGameTitle] = useState("Mi Pasapalabras");
   const [category, setCategory] = useState("General");
   const [savedGames, setSavedGames] = useState<SavedGame[]>([]);
+  const [savedSearch, setSavedSearch] = useState("");
   const [saving, setSaving] = useState(false);
   const [liveId, setLiveId] = useState("");
   const [shareCopied, setShareCopied] = useState(false);
@@ -65,6 +66,14 @@ export default function Home() {
   const correct = words.filter((word) => word.mark === "correct").length;
   const wrong = words.filter((word) => word.mark === "wrong").length;
   const open = words.filter((word) => word.mark === "pending" || word.mark === "passed").length;
+  const filteredSavedGames = useMemo(() => {
+    const query = savedSearch.trim().toLocaleLowerCase("es");
+    if (!query) return savedGames;
+    return savedGames.filter((game) =>
+      game.title.toLocaleLowerCase("es").includes(query) ||
+      game.category.toLocaleLowerCase("es").includes(query)
+    );
+  }, [savedGames, savedSearch]);
 
   useEffect(() => {
     if (!running || view !== "game") return;
@@ -126,6 +135,12 @@ export default function Home() {
   function loadGame(game: SavedGame) {
     setGameTitle(game.title); setCategory(game.category); setRaw(game.words); setMode(game.mode); setDuration(game.duration); setRemaining(game.duration); setTeamNames([game.teamA, game.teamB]);
     window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  async function deleteGame(game: SavedGame) {
+    if (!window.confirm(`¿Eliminar "${game.title}"? Esta acción no se puede deshacer.`)) return;
+    const response = await fetch(`/api/games/${game.id}`, { method: "DELETE" });
+    if (response.ok) setSavedGames((games) => games.filter((item) => item.id !== game.id));
   }
 
   async function copyShareLink() {
@@ -249,7 +264,14 @@ export default function Home() {
 
         <button className="start-button" onClick={start} disabled={!ready.length}>Comenzar partida <span>→</span></button>
 
-        {savedGames.length > 0 && <section className="saved-section"><div><span>Biblioteca de partidas</span><h2>Partidas guardadas</h2></div><div className="saved-list">{savedGames.map((game) => <button key={game.id} onClick={() => loadGame(game)}><small>{game.category}</small><strong>{game.title}</strong><span>{game.mode === "teams" ? "Por equipos" : "Individual"} · {clock(game.duration)}</span></button>)}</div></section>}
+        {savedGames.length > 0 && <section className="saved-section">
+          <div><span>Biblioteca de partidas</span><h2>Partidas guardadas</h2></div>
+          <label className="saved-search"><span>Buscar partidas</span><input type="search" value={savedSearch} onChange={(event) => setSavedSearch(event.target.value)} placeholder="Buscar por nombre o categoría" /></label>
+          {filteredSavedGames.length > 0 ? <div className="saved-list">{filteredSavedGames.map((game) => <article className="saved-item" key={game.id}>
+            <button className="saved-load" onClick={() => loadGame(game)}><small>{game.category}</small><strong>{game.title}</strong><span>{game.mode === "teams" ? "Por equipos" : "Individual"} · {clock(game.duration)}</span></button>
+            <button className="saved-delete" onClick={() => deleteGame(game)} aria-label={`Eliminar ${game.title}`}>Eliminar</button>
+          </article>)}</div> : <p className="saved-empty">No se encontraron partidas con ese nombre o categoría.</p>}
+        </section>}
       </section>
     </main>
   );
