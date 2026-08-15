@@ -12,7 +12,7 @@
     {
       "binding": "DB",
       "database_name": "pasapalabras-db",
-      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+      "database_id": "a641ce35-ba3f-473f-a7fb-c21b8d29b27c",
       "migrations_dir": "drizzle"
     }
   ],
