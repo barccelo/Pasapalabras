@@ -39,10 +39,6 @@ function clock(seconds: number) {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
-function normalizeEntry(value: string) {
-  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLocaleLowerCase("es");
-}
-
 export default function Home() {
   const [view, setView] = useState<"setup" | "game" | "between" | "done">("setup");
   const [raw, setRaw] = useState(SAMPLE);
@@ -65,16 +61,6 @@ export default function Home() {
   const [liveId, setLiveId] = useState("");
   const [shareCopied, setShareCopied] = useState(false);
   const ready = useMemo(() => parse(raw), [raw]);
-  const validationIssues = useMemo(() => {
-    const repeatedLetters = [...new Set(ready.map((word) => word.letter).filter((letter, index, all) => all.indexOf(letter) !== index))];
-    const normalizedAnswers = ready.map((word) => normalizeEntry(word.answer));
-    const repeatedAnswers = [...new Set(ready.filter((_word, index) => normalizedAnswers.indexOf(normalizedAnswers[index]) !== index).map((word) => word.answer))];
-    const issues: string[] = [];
-    if (repeatedLetters.length) issues.push(`Letras repetidas: ${repeatedLetters.join(", ")}. Debe haber una sola palabra por letra.`);
-    if (repeatedAnswers.length) issues.push(`Respuestas repetidas: ${repeatedAnswers.join(", ")}. Cada palabra debe usarse una sola vez.`);
-    return issues;
-  }, [ready]);
-  const validList = ready.length > 0 && validationIssues.length === 0;
   const active = words[current];
   const correct = words.filter((word) => word.mark === "correct").length;
   const wrong = words.filter((word) => word.mark === "wrong").length;
@@ -122,7 +108,6 @@ export default function Home() {
   function freshWords() { return ready.map((word) => ({ ...word, mark: "pending" as Mark })); }
 
   async function start() {
-    if (!validList) return;
     if (liveId) await fetch(`/api/live/${liveId}/close`, { method: "POST", keepalive: true });
     const list = freshWords();
     setWords(list); setCurrent(0); setTeamIndex(0); setResults([]);
@@ -132,7 +117,7 @@ export default function Home() {
   }
 
   async function saveGame() {
-    if (!gameTitle.trim() || !category.trim() || !validList) return;
+    if (!gameTitle.trim() || !category.trim() || !ready.length) return;
     setSaving(true);
     const response = await fetch("/api/games", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: gameTitle, category, words: raw, mode, duration, teamNames }) });
     setSaving(false); if (response.ok) await loadSavedGames();
@@ -217,13 +202,12 @@ export default function Home() {
         <div className="setup-card identity-card">
           <div className="section-head"><div className="step">0</div><div><h2>Identifica la partida</h2><p>Así podrás encontrarla después</p></div></div>
           <div className="identity-inputs"><label>Título<input value={gameTitle} onChange={(e) => setGameTitle(e.target.value)} placeholder="Ej. Geografía de Venezuela" /></label><label>Categoría<input value={category} onChange={(e) => setCategory(e.target.value)} placeholder="Ej. Geografía" /></label></div>
-          <button className="save-game" onClick={saveGame} disabled={saving || !validList || !gameTitle.trim() || !category.trim()}>{saving ? "Guardando…" : "Guardar partida"}</button>
+          <button className="save-game" onClick={saveGame} disabled={saving || !ready.length || !gameTitle.trim() || !category.trim()}>{saving ? "Guardando…" : "Guardar partida"}</button>
         </div>
 
         <div className="setup-card">
           <div className="section-head"><div className="step">1</div><div><h2>Palabras y pistas</h2><p>{ready.length} palabras reconocidas</p></div></div>
           <textarea aria-label="Palabras de la ronda" value={raw} onChange={(event) => setRaw(event.target.value)} spellCheck={false} />
-          {validationIssues.length > 0 && <div className="list-error" role="alert">{validationIssues.map((issue) => <p key={issue}>{issue}</p>)}</div>}
           <div className="list-tools"><button className="clear" onClick={() => setRaw("")}>Limpiar lista</button><div><button className="icon-tool" onClick={pasteList} aria-label="Pegar lista" title="Pegar lista"><span>↧</span> Pegar</button><button className="icon-tool" onClick={copyList} aria-label="Copiar lista" title="Copiar lista"><span>⧉</span> {listCopied ? "Copiada" : "Copiar"}</button></div></div>
         </div>
 
@@ -263,7 +247,7 @@ export default function Home() {
           </div>
         </div>
 
-        <button className="start-button" onClick={start} disabled={!validList}>Comenzar partida <span>→</span></button>
+        <button className="start-button" onClick={start} disabled={!ready.length}>Comenzar partida <span>→</span></button>
 
         {savedGames.length > 0 && <section className="saved-section"><div><span>Biblioteca de partidas</span><h2>Partidas guardadas</h2></div><div className="saved-list">{savedGames.map((game) => <button key={game.id} onClick={() => loadGame(game)}><small>{game.category}</small><strong>{game.title}</strong><span>{game.mode === "teams" ? "Por equipos" : "Individual"} · {clock(game.duration)}</span></button>)}</div></section>}
       </section>
