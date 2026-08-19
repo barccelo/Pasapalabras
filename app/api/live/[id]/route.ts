@@ -13,7 +13,14 @@ export async function GET(_request: Request, context: Context) {
 
 export async function PUT(request: Request, context: Context) {
   const { id } = await context.params;
-  const body = await request.json() as { state?: unknown };
-  await appEnv.DB.prepare("UPDATE live_sessions SET state=?, updated_at=? WHERE id=?").bind(JSON.stringify(body.state || {}), Date.now(), id).run();
+  const body = await request.json() as { state?: Record<string, unknown> };
+  const state = body.state || {};
+  const syncVersion = Number(state.syncVersion) || Date.now();
+  state.syncVersion = syncVersion;
+  await appEnv.DB.prepare(`UPDATE live_sessions SET state=?, updated_at=?
+    WHERE id=?
+      AND COALESCE(json_extract(state, '$.closed'), 0) != 1
+      AND COALESCE(json_extract(state, '$.syncVersion'), 0) <= ?`)
+    .bind(JSON.stringify(state), Date.now(), id, syncVersion).run();
   return Response.json({ ok: true });
 }
