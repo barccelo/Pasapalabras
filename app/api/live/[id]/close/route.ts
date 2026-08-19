@@ -8,8 +8,7 @@ export async function POST(_request: Request, context: Context) {
     .bind(id).first<{ state: string }>();
   if (!row) return Response.json({ ok: true });
 
-  const current = JSON.parse(row.state) as { finished?: boolean };
-  if (current.finished) return Response.json({ ok: true });
+  const current = JSON.parse(row.state) as Record<string, unknown>;
   const state = { ...current, running: false, closed: true };
   await appEnv.DB.prepare("UPDATE live_sessions SET state=?, updated_at=? WHERE id=?")
     .bind(JSON.stringify(state), Date.now(), id).run();
