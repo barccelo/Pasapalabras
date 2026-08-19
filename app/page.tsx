@@ -111,6 +111,15 @@ export default function Home() {
     return () => { window.clearInterval(timer); window.removeEventListener("beforeunload", closeSession); };
   }, [liveId, active, words, current, remaining, running, correct, teamIndex, view]);
 
+  useEffect(() => {
+    if (!liveId || view !== "done") return;
+    const closeSession = () => { navigator.sendBeacon(`/api/live/${liveId}/close`); };
+    const heartbeat = () => { void publishFinalState(results); };
+    const timer = window.setInterval(heartbeat, 15000);
+    window.addEventListener("beforeunload", closeSession);
+    return () => { window.clearInterval(timer); window.removeEventListener("beforeunload", closeSession); };
+  }, [liveId, view, results]);
+
   function publicState(list: Word[], index: number, word: Word, time: number, isRunning: boolean, points: number) {
     return { words: list.map(({ letter, mark }) => ({ letter, mark })), current: index, clue: word.clue, relation: `${word.relation === "EMPIEZA" ? "Empieza por" : "Contiene la"} ${word.letter}`, remaining: time, timerMode, team: mode === "teams" ? teamNames[teamIndex] : "Ronda individual", correct: points, running: isRunning };
   }
@@ -327,7 +336,7 @@ export default function Home() {
         })}
       </section>
       {selected && <div className="answer-detail" role="dialog" aria-modal="true" onClick={() => setSummarySelection(null)}><section onClick={(event) => event.stopPropagation()}><button onClick={() => setSummarySelection(null)} aria-label="Cerrar">×</button><span className={`detail-letter ${selected.mark}`}>{selected.letter}</span><small>{selected.relation === "EMPIEZA" ? "Empieza por" : "Contiene la"} {selected.letter}</small><h2>{selected.clue}</h2><div className="detail-answer"><span>Respuesta</span><strong>{selected.answer}</strong></div></section></div>}
-      <div className="result-actions"><button className="secondary" onClick={() => { setSummarySelection(null); setView("setup"); }}>Editar partida</button><button className="start-button" onClick={start}>Jugar de nuevo</button></div></section></main>;
+      <div className="result-actions"><button className="secondary" onClick={exitGame}>Editar partida</button><button className="start-button" onClick={start}>Jugar de nuevo</button></div></section></main>;
   }
 
   return (
