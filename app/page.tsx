@@ -66,6 +66,7 @@ export default function Home() {
   const [showPrompt, setShowPrompt] = useState(true);
   const [summarySelection, setSummarySelection] = useState<{ result: number; word: number } | null>(null);
   const [summaryView, setSummaryView] = useState<"letters" | "lists">("letters");
+  const [flippedResults, setFlippedResults] = useState<number[]>([]);
   const ready = useMemo(() => parse(raw), [raw]);
   const active = words[current];
   const correct = words.filter((word) => word.mark === "correct").length;
@@ -99,7 +100,7 @@ export default function Home() {
   }, [liveId, words, current, remaining, running, view, teamIndex]);
 
   useEffect(() => {
-    if (!liveId || !active) return;
+    if (!liveId || !active || view !== "game") return;
     const heartbeat = () => {
       const state = publicState(words, current, active, remaining, running, correct);
       void fetch(`/api/live/${liveId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ state }) });
@@ -108,7 +109,7 @@ export default function Home() {
     const timer = window.setInterval(heartbeat, 5000);
     window.addEventListener("beforeunload", closeSession);
     return () => { window.clearInterval(timer); window.removeEventListener("beforeunload", closeSession); };
-  }, [liveId, active, words, current, remaining, running, correct, teamIndex]);
+  }, [liveId, active, words, current, remaining, running, correct, teamIndex, view]);
 
   function publicState(list: Word[], index: number, word: Word, time: number, isRunning: boolean, points: number) {
     return { words: list.map(({ letter, mark }) => ({ letter, mark })), current: index, clue: word.clue, relation: `${word.relation === "EMPIEZA" ? "Empieza por" : "Contiene la"} ${word.letter}`, remaining: time, timerMode, team: mode === "teams" ? teamNames[teamIndex] : "Ronda individual", correct: points, running: isRunning };
@@ -124,7 +125,7 @@ export default function Home() {
   async function start() {
     if (liveId) await fetch(`/api/live/${liveId}/close`, { method: "POST", keepalive: true });
     const list = freshWords();
-    setWords(list); setCurrent(0); setTeamIndex(0); setResults([]);
+    setWords(list); setCurrent(0); setTeamIndex(0); setResults([]); setFlippedResults([]); setSummarySelection(null);
     const initialTime = timerMode === "countdown" ? duration : 0;
     setRemaining(initialTime); setRunning(false); setView("game"); setLiveId("");
     const response = await fetch("/api/live", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ gameTitle, state: publicState(list, 0, list[0], initialTime, false, 0) }) });
@@ -181,7 +182,18 @@ export default function Home() {
     const nextResults = [...results, turn];
     setResults(nextResults);
     if (mode === "teams" && teamIndex === 0) setView("between");
-    else setView("done");
+    else {
+      setView("done");
+      if (liveId) void publishFinalState(nextResults);
+    }
+  }
+
+  async function publishFinalState(finalResults: TeamResult[]) {
+    await fetch(`/api/live/${liveId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ state: { finished: true, gameTitle, timerMode, results: finalResults } }),
+    });
   }
 
   function startSecondTeam() {
@@ -300,7 +312,7 @@ export default function Home() {
   if (view === "done") {
     const ranked = [...results].sort((a, b) => b.correct - a.correct || a.elapsed - b.elapsed);
     const selected = summarySelection ? ranked[summarySelection.result]?.words[summarySelection.word] : null;
-    return <main className="message-page summary-page"><section className="message-card results-card"><span className="turn-done">★</span><small>Partida terminada</small><h1>{mode === "teams" ? `${ranked[0]?.name} gana` : "Resultado final"}</h1><p>{mode === "teams" ? "Gana quien consigue más aciertos; en caso de empate, quien usa menos tiempo." : "Así terminó tu rosco."}</p><div className="team-results">{ranked.map((result, index) => <div className={index === 0 ? "winner" : ""} key={result.name}><span>{index === 0 && mode === "teams" ? "Ganador" : "Resultado"}</span><h2>{result.name}</h2><strong>{result.correct} <small>aciertos</small></strong><p>{clock(result.elapsed)} · {result.wrong} incorrectas</p></div>)}</div>
+    return <main className="message-page summary-page"><section className="message-card results-card"><span className="turn-done">★</span><small>Partida terminada</small><h1>{mode === "teams" ? `${ranked[0]?.name} gana` : "Resultado final"}</h1><p>{mode === "teams" ? "Gana quien consigue más aciertos; en caso de empate, quien usa menos tiempo." : "Así terminó tu rosco."}</p><div className="team-results flip-results">{ranked.map((result, index) => { const flipped = flippedResults.includes(index); return <div className={`flip-result${flipped ? " flipped" : ""}`} key={result.name} onClick={() => setFlippedResults((items) => items.includes(index) ? items.filter((item) => item !== index) : [...items, index])}><div className="flip-result-inner"><section className={`flip-result-front${index === 0 ? " winner" : ""}`}><span>{index === 0 && mode === "teams" ? "Ganador" : "Resultado"}</span><h2>{result.name}</h2><strong>{result.correct} <small>aciertos</small></strong><p>{clock(result.elapsed)} · {result.wrong} incorrectas</p><em>Toca para ver el rosco ↻</em></section><section className="flip-result-back"><div className="mini-result-rosco">{result.words.map((word, wordIndex) => { const angle = (360 / result.words.length) * wordIndex - 90; return <button key={wordIndex} className={word.mark} style={{ "--angle": `${angle}deg` } as CSSProperties} onClick={(event) => { event.stopPropagation(); setSummarySelection({ result: index, word: wordIndex }); }}>{word.letter}</button>; })}<div><strong>{result.correct}</strong><small>aciertos</small></div></div><em>Toca fuera de las letras para volver ↻</em></section></div></div>; })}</div>
       <section className="answer-summary">
         <div className="summary-heading"><div><h2>Resumen de respuestas</h2><p>Toca cualquier letra o respuesta para ver su detalle.</p></div><div className="summary-view-toggle"><button className={summaryView === "letters" ? "selected" : ""} onClick={() => setSummaryView("letters")}>Letras</button><button className={summaryView === "lists" ? "selected" : ""} onClick={() => setSummaryView("lists")}>Listas</button></div></div>
         {ranked.map((result, resultIndex) => {
