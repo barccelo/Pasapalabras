@@ -3,7 +3,9 @@
 import { useEffect, useState, type CSSProperties } from "react";
 
 type PublicWord = { letter: string; mark: "pending" | "passed" | "correct" | "wrong" };
-type LiveState = { words: PublicWord[]; current: number; clue: string; relation: string; remaining: number; timerMode?: "countdown" | "countup"; team: string; correct: number; running: boolean; closed?: boolean; hostOnline?: boolean };
+type FinalWord = PublicWord & { answer: string; clue: string; relation: "EMPIEZA" | "CONTIENE" };
+type FinalResult = { name: string; correct: number; wrong: number; elapsed: number; words: FinalWord[] };
+type LiveState = { words?: PublicWord[]; current?: number; clue?: string; relation?: string; remaining?: number; timerMode?: "countdown" | "countup"; team?: string; correct?: number; running?: boolean; finished?: boolean; results?: FinalResult[]; closed?: boolean; hostOnline?: boolean };
 
 function clock(seconds: number) { return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`; }
 
@@ -11,6 +13,8 @@ export default function Audience({ params }: { params: Promise<{ id: string }> }
   const [id, setId] = useState("");
   const [title, setTitle] = useState("Pasapalabras");
   const [state, setState] = useState<LiveState | null>(null);
+  const [resultIndex, setResultIndex] = useState(0);
+  const [selectedWord, setSelectedWord] = useState<number | null>(null);
 
   useEffect(() => { params.then((value) => setId(value.id)); }, [params]);
   useEffect(() => {
@@ -22,7 +26,7 @@ export default function Audience({ params }: { params: Promise<{ id: string }> }
       if (response.ok && active) {
         const data = await response.json() as { gameTitle: string; state: LiveState };
         setTitle(data.gameTitle); setState(data.state);
-        if (data.state.closed || data.state.hostOnline === false) window.clearInterval(timer);
+        if (data.state.closed || data.state.hostOnline === false || data.state.finished) window.clearInterval(timer);
       }
     };
     void load(); timer = window.setInterval(load, 2000);
@@ -31,5 +35,12 @@ export default function Audience({ params }: { params: Promise<{ id: string }> }
 
   if (!state) return <main className="audience-loading">Preparando el rosco…</main>;
   if (state.closed || state.hostOnline === false) return <main className="audience-loading">La partida fue cerrada por el anfitrión.</main>;
-  return <main className="audience-page"><header><span>En vivo</span><h1>{title}</h1><p>{state.team} · {state.correct} aciertos</p></header><section className="audience-stage"><div className="audience-rosco">{state.words.map((word, index) => { const angle = (360 / state.words.length) * index - 90; return <div key={index} className={`audience-letter ${word.mark} ${index === state.current ? "current" : ""}`} style={{ "--angle": `${angle}deg` } as CSSProperties}>{word.letter}</div>; })}<div className={`audience-time ${state.timerMode !== "countup" && state.remaining <= 10 ? "urgent" : ""}`}><small>{state.timerMode === "countup" ? "Transcurrido" : "Tiempo"}</small><strong>{clock(state.remaining)}</strong><span>{state.running ? "Jugando" : "En pausa"}</span></div></div><div className="audience-clue"><span>{state.relation}</span><h2>{state.clue}</h2></div></section><footer>Vista para audiencia · La respuesta permanece oculta</footer></main>;
+  if (state.finished && state.results?.length) {
+    const result = state.results[resultIndex] || state.results[0];
+    const word = selectedWord === null ? null : result.words[selectedWord];
+    return <main className="audience-page audience-final"><header><span>Finalizado</span><h1>{title}</h1><p>{result.name} · {result.correct} aciertos · {clock(result.elapsed)}</p>{state.results.length > 1 && <div className="audience-result-tabs">{state.results.map((item, index) => <button className={index === resultIndex ? "selected" : ""} key={item.name} onClick={() => { setResultIndex(index); setSelectedWord(null); }}>{item.name}</button>)}</div>}</header><section className="audience-final-stage"><div className="audience-rosco final-rosco">{result.words.map((item, index) => { const angle = (360 / result.words.length) * index - 90; return <button key={index} className={`audience-letter ${item.mark} ${selectedWord === index ? "current" : ""}`} style={{ "--angle": `${angle}deg` } as CSSProperties} onClick={() => setSelectedWord(index)}>{item.letter}</button>; })}<div className="audience-time"><small>Resultado</small><strong>{result.correct}</strong><span>aciertos</span></div></div><div className={`audience-final-answer${word ? " visible" : ""}`}>{word ? <><span>{word.relation === "EMPIEZA" ? "Empieza por" : "Contiene la"} {word.letter}</span><h2>{word.clue}</h2><p>Respuesta <strong>{word.answer}</strong></p></> : <><span>Rosco final</span><h2>Toca una letra para ver su respuesta</h2><p>{result.wrong} incorrectas</p></>}</div></section><footer>Resultado final · Las respuestas ya están disponibles</footer></main>;
+  }
+  const liveWords = state.words || [];
+  const liveTime = state.remaining || 0;
+  return <main className="audience-page"><header><span>En vivo</span><h1>{title}</h1><p>{state.team} · {state.correct} aciertos</p></header><section className="audience-stage"><div className="audience-rosco">{liveWords.map((word, index) => { const angle = (360 / liveWords.length) * index - 90; return <div key={index} className={`audience-letter ${word.mark} ${index === state.current ? "current" : ""}`} style={{ "--angle": `${angle}deg` } as CSSProperties}>{word.letter}</div>; })}<div className={`audience-time ${state.timerMode !== "countup" && liveTime <= 10 ? "urgent" : ""}`}><small>{state.timerMode === "countup" ? "Transcurrido" : "Tiempo"}</small><strong>{clock(liveTime)}</strong><span>{state.running ? "Jugando" : "En pausa"}</span></div></div><div className="audience-clue"><span>{state.relation}</span><h2>{state.clue}</h2></div></section><footer>Vista para audiencia · La respuesta permanece oculta</footer></main>;
 }
