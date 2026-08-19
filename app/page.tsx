@@ -272,10 +272,10 @@ export default function Home() {
         <div className="setup-card timer-card">
           <div className="section-head"><div className="step">5</div><div><h2>Tiempo por ronda</h2><p>Por defecto: 2 minutos</p></div></div>
           <div className="timer-mode-toggle"><button className={timerMode === "countdown" ? "selected" : ""} onClick={() => { setTimerMode("countdown"); setRemaining(duration); }}><strong>Cuenta regresiva</strong><span>De 2:00 a 0:00</span></button><button className={timerMode === "countup" ? "selected" : ""} onClick={() => { setTimerMode("countup"); setRemaining(0); }}><strong>Cronómetro</strong><span>Desde 0:00</span></button></div>
-          {timerMode === "countdown" && <div className="time-inputs wheel-time-inputs">
-            <WheelNumber label="minutos" value={Math.floor(duration / 60)} min={0} max={59} onChange={(value) => updateDuration(value, duration % 60)} />
+          {timerMode === "countdown" && <div className="time-inputs">
+            <SwipeNumberInput label="minutos" value={Math.floor(duration / 60)} min={0} max={59} onChange={(value) => updateDuration(value, duration % 60)} />
             <b>:</b>
-            <WheelNumber label="segundos" value={duration % 60} min={0} max={59} onChange={(value) => updateDuration(Math.floor(duration / 60), value)} />
+            <SwipeNumberInput label="segundos" value={duration % 60} min={0} max={59} onChange={(value) => updateDuration(Math.floor(duration / 60), value)} />
           </div>}
         </div>
 
@@ -343,19 +343,18 @@ export default function Home() {
 
 function Header() { return <header className="brand"><div>P</div><p><strong>Pasapalabras</strong><span>Panel del operador</span></p></header>; }
 
-function WheelNumber({ label, value, min, max, onChange }: { label: string; value: number; min: number; max: number; onChange: (value: number) => void }) {
+function SwipeNumberInput({ label, value, min, max, onChange }: { label: string; value: number; min: number; max: number; onChange: (value: number) => void }) {
   const drag = useRef<{ y: number; value: number } | null>(null);
   const clamp = (next: number) => Math.max(min, Math.min(max, next));
-  const change = (delta: number) => onChange(clamp(value + delta));
-  const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+  const handlePointerDown = (event: ReactPointerEvent<HTMLInputElement>) => {
     drag.current = { y: event.clientY, value };
     event.currentTarget.setPointerCapture(event.pointerId);
   };
-  const handlePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+  const handlePointerMove = (event: ReactPointerEvent<HTMLInputElement>) => {
     if (!drag.current) return;
-    const steps = Math.round((drag.current.y - event.clientY) / 30);
+    const steps = Math.round((drag.current.y - event.clientY) / 24);
     onChange(clamp(drag.current.value + steps));
   };
   const stopDragging = () => { drag.current = null; };
-  return <label className="number-wheel"><button type="button" onClick={() => change(1)} aria-label={`Aumentar ${label}`}>⌃</button><div role="spinbutton" aria-label={label} aria-valuemin={min} aria-valuemax={max} aria-valuenow={value} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={stopDragging} onPointerCancel={stopDragging}><span>{value > min ? String(value - 1).padStart(2, "0") : ""}</span><strong>{String(value).padStart(2, "0")}</strong><span>{value < max ? String(value + 1).padStart(2, "0") : ""}</span></div><button type="button" onClick={() => change(-1)} aria-label={`Disminuir ${label}`}>⌄</button><small>{label}</small></label>;
+  return <label className="swipe-number"><input type="number" inputMode="numeric" min={min} max={max} value={value} onChange={(event) => onChange(clamp(Number(event.target.value)))} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={stopDragging} onPointerCancel={stopDragging} onWheel={(event) => { event.preventDefault(); onChange(clamp(value + (event.deltaY < 0 ? 1 : -1))); }} /><span>{label}</span></label>;
 }
