@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 
 type PublicWord = { letter: string; mark: "pending" | "passed" | "correct" | "wrong" };
 type FinalWord = PublicWord & { answer: string; clue: string; relation: "EMPIEZA" | "CONTIENE" };
@@ -16,20 +16,33 @@ export default function Audience({ params }: { params: Promise<{ id: string }> }
   const [displayTime, setDisplayTime] = useState(0);
   const [resultIndex, setResultIndex] = useState(0);
   const [selectedWord, setSelectedWord] = useState<number | null>(null);
+  const lastUpdatedRef = useRef(0);
 
   useEffect(() => { params.then((value) => setId(value.id)); }, [params]);
   useEffect(() => {
     if (!id) return;
+    lastUpdatedRef.current = 0;
     let active = true;
     let timer = 0;
     const load = async () => {
       const response = await fetch(`/api/live/${id}`, { cache: "no-store" });
       if (response.ok && active) {
         const data = await response.json() as { gameTitle: string; updatedAt: number; serverNow: number; state: LiveState };
+        if (data.updatedAt < lastUpdatedRef.current) {
+          timer = window.setTimeout(load, 2000);
+          return;
+        }
+        const isFirstUpdate = lastUpdatedRef.current === 0;
+        lastUpdatedRef.current = data.updatedAt;
         setTitle(data.gameTitle); setState(data.state);
         const base = data.state.remaining || 0;
         const elapsed = data.state.running ? Math.max(0, Math.floor((data.serverNow - data.updatedAt) / 1000)) : 0;
-        setDisplayTime(data.state.timerMode === "countup" ? base + elapsed : Math.max(0, base - elapsed));
+        const corrected = data.state.timerMode === "countup" ? base + elapsed : Math.max(0, base - elapsed);
+        setDisplayTime((current) => {
+          if (isFirstUpdate) return corrected;
+          if (!data.state.running) return corrected;
+          return data.state.timerMode === "countup" ? Math.max(current, corrected) : Math.min(current, corrected);
+        });
         if (data.state.closed || data.state.hostOnline === false) return;
         timer = window.setTimeout(load, data.state.finished ? 10000 : 2000);
       }
