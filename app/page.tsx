@@ -67,6 +67,9 @@ export default function Home() {
   const [summarySelection, setSummarySelection] = useState<{ result: number; word: number } | null>(null);
   const [summaryView, setSummaryView] = useState<"letters" | "lists">("letters");
   const [flippedResults, setFlippedResults] = useState<number[]>([]);
+  const timerAnchorRef = useRef(0);
+  const timerAnchorValueRef = useRef(0);
+  const syncVersionRef = useRef(0);
   const ready = useMemo(() => parse(raw), [raw]);
   const active = words[current];
   const correct = words.filter((word) => word.mark === "correct").length;
@@ -83,13 +86,21 @@ export default function Home() {
 
   useEffect(() => {
     if (!running || view !== "game") return;
-    if (timerMode === "countdown" && remaining <= 0) {
-      finishTurn();
-      return;
-    }
-    const timer = window.setTimeout(() => setRemaining((value) => timerMode === "countdown" ? value - 1 : value + 1), 1000);
-    return () => window.clearTimeout(timer);
-  }, [running, remaining, view, timerMode]);
+    const update = () => {
+      const elapsed = Math.floor((Date.now() - timerAnchorRef.current) / 1000);
+      const next = timerMode === "countdown"
+        ? Math.max(0, timerAnchorValueRef.current - elapsed)
+        : timerAnchorValueRef.current + elapsed;
+      setRemaining(next);
+      if (timerMode === "countdown" && next === 0) {
+        setRunning(false);
+        finishTurn(words, 0);
+      }
+    };
+    update();
+    const timer = window.setInterval(update, 200);
+    return () => window.clearInterval(timer);
+  }, [running, view, timerMode, words]);
 
   useEffect(() => { loadSavedGames(); }, []);
 
@@ -121,7 +132,24 @@ export default function Home() {
   }, [liveId, view, results]);
 
   function publicState(list: Word[], index: number, word: Word, time: number, isRunning: boolean, points: number) {
-    return { words: list.map(({ letter, mark }) => ({ letter, mark })), current: index, clue: word.clue, relation: `${word.relation === "EMPIEZA" ? "Empieza por" : "Contiene la"} ${word.letter}`, remaining: time, timerMode, team: mode === "teams" ? teamNames[teamIndex] : "Ronda individual", correct: points, running: isRunning };
+    return { words: list.map(({ letter, mark }) => ({ letter, mark })), current: index, clue: word.clue, relation: `${word.relation === "EMPIEZA" ? "Empieza por" : "Contiene la"} ${word.letter}`, remaining: time, timerMode, team: mode === "teams" ? teamNames[teamIndex] : "Ronda individual", correct: points, running: isRunning, syncVersion: nextSyncVersion() };
+  }
+
+  function nextSyncVersion() {
+    syncVersionRef.current = Math.max(Date.now(), syncVersionRef.current + 1);
+    return syncVersionRef.current;
+  }
+
+  function toggleTimer() {
+    if (running) {
+      const elapsed = Math.floor((Date.now() - timerAnchorRef.current) / 1000);
+      setRemaining(timerMode === "countdown" ? Math.max(0, timerAnchorValueRef.current - elapsed) : timerAnchorValueRef.current + elapsed);
+      setRunning(false);
+      return;
+    }
+    timerAnchorRef.current = Date.now();
+    timerAnchorValueRef.current = remaining;
+    setRunning(true);
   }
 
   async function loadSavedGames() {
@@ -179,13 +207,13 @@ export default function Home() {
     nextOpen(current, updated);
   }
 
-  function finishTurn(list = words) {
+  function finishTurn(list = words, timeValue = remaining) {
     setRunning(false);
     const turn: TeamResult = {
       name: mode === "teams" ? teamNames[teamIndex] : "Resultado",
       correct: list.filter((word) => word.mark === "correct").length,
       wrong: list.filter((word) => word.mark === "wrong").length,
-      elapsed: timerMode === "countdown" ? duration - remaining : remaining,
+      elapsed: timerMode === "countdown" ? duration - timeValue : timeValue,
       words: list.map((word) => ({ ...word })),
     };
     const nextResults = [...results, turn];
@@ -201,7 +229,7 @@ export default function Home() {
     await fetch(`/api/live/${liveId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ state: { finished: true, gameTitle, timerMode, results: finalResults } }),
+      body: JSON.stringify({ state: { finished: true, gameTitle, timerMode, results: finalResults, syncVersion: nextSyncVersion() } }),
     });
   }
 
@@ -348,7 +376,7 @@ export default function Home() {
             const angle = (360 / words.length) * index - 90;
             return <button key={`${word.letter}-${index}`} aria-label={`Letra ${word.letter}, ${word.mark}`} className={`rosco-letter ${word.mark} ${index === current ? "current" : ""}`} style={{ "--angle": `${angle}deg` } as CSSProperties} onClick={() => setCurrent(index)}>{word.letter}</button>;
           })}
-          <div className={`timer-display ${timerMode === "countdown" && remaining <= 10 ? "urgent" : ""}`}><small>{timerMode === "countdown" ? "Tiempo" : "Transcurrido"}</small><strong>{clock(remaining)}</strong><button onClick={() => setRunning(!running)}>{running ? "Pausar" : "Continuar"}</button></div>
+          <div className={`timer-display ${timerMode === "countdown" && remaining <= 10 ? "urgent" : ""}`}><small>{timerMode === "countdown" ? "Tiempo" : "Transcurrido"}</small><strong>{clock(remaining)}</strong><button onClick={toggleTimer}>{running ? "Pausar" : "Continuar"}</button></div>
         </div>
       </section>
 
