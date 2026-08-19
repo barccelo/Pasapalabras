@@ -7,6 +7,7 @@ export const games = sqliteTable("games", {
   words: text("words").notNull(),
   mode: text("mode").notNull(),
   duration: integer("duration").notNull(),
+  timerMode: text("timer_mode").notNull().default("countdown"),
   teamA: text("team_a").notNull(),
   teamB: text("team_b").notNull(),
   createdAt: integer("created_at").notNull(),
