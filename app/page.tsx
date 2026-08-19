@@ -70,6 +70,7 @@ export default function Home() {
   const timerAnchorRef = useRef(0);
   const timerAnchorValueRef = useRef(0);
   const syncVersionRef = useRef(0);
+  const summarySwipeStartRef = useRef<number | null>(null);
   const ready = useMemo(() => parse(raw), [raw]);
   const active = words[current];
   const correct = words.filter((word) => word.mark === "correct").length;
@@ -349,6 +350,18 @@ export default function Home() {
   if (view === "done") {
     const ranked = [...results].sort((a, b) => b.correct - a.correct || a.elapsed - b.elapsed);
     const selected = summarySelection ? ranked[summarySelection.result]?.words[summarySelection.word] : null;
+    const selectedCategory = selected ? selected.mark === "correct" ? "correct" : selected.mark === "wrong" ? "wrong" : "unanswered" : null;
+    const categoryWordIndexes = selected && summarySelection ? ranked[summarySelection.result].words
+      .map((word, index) => ({ word, index }))
+      .filter(({ word }) => selectedCategory === "unanswered" ? word.mark === "pending" || word.mark === "passed" : word.mark === selectedCategory)
+      .map(({ index }) => index) : [];
+    const categoryPosition = summarySelection ? categoryWordIndexes.indexOf(summarySelection.word) : -1;
+    const navigateCategory = (direction: number) => {
+      if (!summarySelection) return;
+      const nextPosition = categoryPosition + direction;
+      if (nextPosition < 0 || nextPosition >= categoryWordIndexes.length) return;
+      setSummarySelection({ result: summarySelection.result, word: categoryWordIndexes[nextPosition] });
+    };
     return <main className="message-page summary-page"><section className="message-card results-card"><span className="turn-done">★</span><small>Partida terminada</small><h1>{mode === "teams" ? `${ranked[0]?.name} gana` : "Resultado final"}</h1><p>{mode === "teams" ? "Gana quien consigue más aciertos; en caso de empate, quien usa menos tiempo." : "Así terminó tu rosco."}</p><div className="team-results flip-results">{ranked.map((result, index) => { const flipped = flippedResults.includes(index); return <div className={`flip-result${flipped ? " flipped" : ""}`} key={result.name} onClick={() => setFlippedResults((items) => items.includes(index) ? items.filter((item) => item !== index) : [...items, index])}><div className="flip-result-inner"><section className={`flip-result-front${index === 0 ? " winner" : ""}`}><span>{index === 0 && mode === "teams" ? "Ganador" : "Resultado"}</span><h2>{result.name}</h2><strong>{result.correct} <small>aciertos</small></strong><p>{clock(result.elapsed)} · {result.wrong} incorrectas</p><em>Toca para ver el rosco ↻</em></section><section className="flip-result-back"><div className="mini-result-rosco">{result.words.map((word, wordIndex) => { const angle = (360 / result.words.length) * wordIndex - 90; return <button key={wordIndex} className={word.mark} style={{ "--angle": `${angle}deg` } as CSSProperties} onClick={(event) => { event.stopPropagation(); setSummarySelection({ result: index, word: wordIndex }); }}>{word.letter}</button>; })}<div><strong>{result.correct}</strong><small>aciertos</small></div></div><em>Toca fuera de las letras para volver ↻</em></section></div></div>; })}</div>
       <section className="answer-summary">
         <div className="summary-heading"><div><h2>Resumen de respuestas</h2><p>Toca cualquier letra o respuesta para ver su detalle.</p></div><div className="summary-view-toggle"><button className={summaryView === "letters" ? "selected" : ""} onClick={() => setSummaryView("letters")}>Letras</button><button className={summaryView === "lists" ? "selected" : ""} onClick={() => setSummaryView("lists")}>Listas</button></div></div>
@@ -363,7 +376,7 @@ export default function Home() {
           </> : <div className="summary-lists"><div><h4>Incorrectas ({wrongWords.length})</h4>{result.words.map((word, wordIndex) => word.mark === "wrong" && <button key={wordIndex} onClick={() => setSummarySelection({ result: resultIndex, word: wordIndex })}><b>{word.letter}</b><span>{word.answer}</span></button>)}</div><div><h4>Sin responder ({unansweredWords.length})</h4>{result.words.map((word, wordIndex) => (word.mark === "pending" || word.mark === "passed") && <button key={wordIndex} onClick={() => setSummarySelection({ result: resultIndex, word: wordIndex })}><b>{word.letter}</b><span>{word.answer}</span></button>)}</div></div>}</div>;
         })}
       </section>
-      {selected && <div className="answer-detail" role="dialog" aria-modal="true" onClick={() => setSummarySelection(null)}><section onClick={(event) => event.stopPropagation()}><button onClick={() => setSummarySelection(null)} aria-label="Cerrar">×</button><span className={`detail-letter ${selected.mark}`}>{selected.letter}</span><small>{selected.relation === "EMPIEZA" ? "Empieza por" : "Contiene la"} {selected.letter}</small><h2>{selected.clue}</h2><div className="detail-answer"><span>Respuesta</span><strong>{selected.answer}</strong></div></section></div>}
+      {selected && <div className="answer-detail" role="dialog" aria-modal="true" onClick={() => setSummarySelection(null)}><section className="swipeable-detail" onClick={(event) => event.stopPropagation()} onPointerDown={(event) => { if (event.pointerType === "touch") summarySwipeStartRef.current = event.clientX; }} onPointerUp={(event) => { if (summarySwipeStartRef.current === null) return; const distance = event.clientX - summarySwipeStartRef.current; summarySwipeStartRef.current = null; if (distance > 45) navigateCategory(1); else if (distance < -45) navigateCategory(-1); }} onPointerCancel={() => { summarySwipeStartRef.current = null; }}><button onClick={() => setSummarySelection(null)} aria-label="Cerrar">×</button><span className={`detail-letter ${selected.mark}`}>{selected.letter}</span><small>{selected.relation === "EMPIEZA" ? "Empieza por" : "Contiene la"} {selected.letter}</small><h2>{selected.clue}</h2><div className="detail-answer"><span>Respuesta</span><strong>{selected.answer}</strong></div><div className="detail-navigation"><button onClick={() => navigateCategory(-1)} disabled={categoryPosition <= 0} aria-label="Respuesta anterior">‹</button><span>{categoryPosition + 1} de {categoryWordIndexes.length}</span><button onClick={() => navigateCategory(1)} disabled={categoryPosition >= categoryWordIndexes.length - 1} aria-label="Respuesta siguiente">›</button></div></section></div>}
       <div className="result-actions"><button className="secondary" onClick={exitGame}>Editar partida</button><button className="start-button" onClick={start}>Jugar de nuevo</button></div></section></main>;
   }
 
